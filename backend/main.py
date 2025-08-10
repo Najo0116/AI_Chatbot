@@ -11,12 +11,15 @@ from database import engine, SessionLocal
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from passlib.hash import bcrypt
+from google import genai
 import os
 
 load_dotenv(find_dotenv())
 
 app = FastAPI()
 models.Base.metadata.create_all(bind=engine)
+
+client = genai.Client()
 
 app.add_middleware(
     CORSMiddleware,
@@ -113,8 +116,15 @@ def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: db_depen
     return user
 
 def call_gemini(user_message: str) -> str:
-    # Placeholder; wire real Gemini later
-    return "Gemini placeholder response"
+    try:
+        response = client.models.generate_content(
+        model="gemini-2.5-flash", contents=user_message
+        )
+        text = (response.text or "").strip()
+
+        return text or "There was no response"
+    except Exception:
+        return "The AI is temporarily unavailable, out for coffee maybe..."
 
 @app.post("/login", response_model=TokenOut)
 def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: db_dependency):
