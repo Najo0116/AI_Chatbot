@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Annotated
@@ -16,6 +17,14 @@ load_dotenv(find_dotenv())
 
 app = FastAPI()
 models.Base.metadata.create_all(bind=engine)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],   # "*" = allow all HTTP verbs (GET, POST, etc.)
+    allow_headers=["*"],   # "*" = allow all headers, e.g., Authorization
+)
 
 def get_db():
     db = SessionLocal()
@@ -115,7 +124,7 @@ def login(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: db_dependen
     token = create_access_token(sub=user.username, user_id=user.id)
     return TokenOut(access_token=token)
 
-@app.post("/test", response_model=ChatOut, status_code=status.HTTP_201_CREATED)
+@app.post("/chat", response_model=ChatOut, status_code=status.HTTP_201_CREATED)
 def chat(chatIn: ChatIn, db: db_dependency, current_user: Annotated[models.User, Depends(get_current_user)]):
     user_message = chatIn.message
     ai_reply = call_gemini(user_message=user_message)
@@ -140,3 +149,19 @@ def chat(chatIn: ChatIn, db: db_dependency, current_user: Annotated[models.User,
         reply=db_message.reply,
         timestamp=db_message.timestamp
     )
+
+@app.get("/chat/logs", response_model=list[ChatOut])
+def get_chat_logs(
+    db: db_dependency,
+    current_user: Annotated[models.User, Depends(get_current_user)]
+):
+    rows = (
+        db.query(models.ChatLog)
+          .filter(models.ChatLog.user_id == current_user.id)
+          .order_by(models.ChatLog.timestamp.asc())
+          .all()
+    )
+    return [
+        ChatOut(id=r.id, message=r.message, reply=r.reply, timestamp=r.timestamp)
+        for r in rows
+    ]
